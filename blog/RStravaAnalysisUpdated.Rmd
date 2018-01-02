@@ -1,0 +1,137 @@
+---
+title: "Is it a run or a ride?"
+author: "Jonathan Harrison"
+date: "2018-01-02"
+output: html_document
+---
+
+For over a year now, I have been recording my daily commute by bike, as well as other recreational cycles and runs, on a widely used app called [Strava](http://www.strava.com). 
+By accessing the Strava API, it is possible (and not all that hard, I used the steps described here: <http://www.open-thoughts.com/2017/01/the-quantified-cyclist-analysing-strava-data-using-r/>) to import data about these sessions to analyse in a program such as R.
+In addition, we can obtain the raw GPS data by downloading *.gpx* files directly from the Strava profile page, as described in this R package: <https://github.com/marcusvolz/strava/>
+In this post, I will explore some of these data. 
+
+```{r, echo=FALSE, message=FALSE}
+load("StravaData1Jan.Rdata")
+# devtools::load_all('strava/')
+# gpx_data <- process_data('activities/')
+load("GPXData1Jan.Rdata")
+```
+
+First we need to combine two different data sets: the GPS data and the data from the strava API. These tell us different things but should be describing the same rides.
+
+```{r, message=FALSE}
+library(dplyr)
+new_data <- gpx_data %>%
+  group_by(id) %>%
+  summarise(start_date = min(time) %>%
+              as.character %>%
+              gsub(' ', 'T', .) %>%
+              paste(.,'Z',sep='') ) %>%
+  left_join(strava_data,.,by=c('start_date')) %>%
+  left_join(gpx_data,.,by=c('id'))
+
+```
+
+Here is a summary of the combined dataset:
+```{r}
+str(new_data)
+```
+
+First lets scale some of the features to give more familiar units, and pick out the runs and rides separately.
+```{r,message=FALSE,warning=FALSE}
+#process data to convert units
+processed_data <- mutate(new_data,dist_km = distance/1000,av_speed_kmph = average_speed*3600/1000,time_mins = elapsed_time/60)
+```
+
+Visualising this data gives us a better idea of how it is structured. How different are my runs and rides? Can we tell them apart?
+```{r,message=FALSE,warning=FALSE}
+library(ggplot2)
+grouped_by_id <- processed_data %>%
+  group_by(id) %>%
+  summarise(dist_km = unique(dist_km),
+            av_speed_kmph = unique(av_speed_kmph),
+            type = unique(type))
+ggplot(data = grouped_by_id, aes(dist_km,av_speed_kmph)) + 
+geom_point(aes(col=type)) + 
+theme_bw()
+
+```
+
+It seems we have two overlapping classes, runs and rides. 
+Although mostly I will cycle faster and further than I run, that is not always the case.
+Some of the data may include walking around a supermarket in the middle of a ride home for instance!
+Nevertheless, can we parameterise a model to distinguish between runs and rides, based on the speed and distance of an activity?
+
+The data seem to be bimodal, with two overlapping classes, so a sensible first choice of model is a mixture of Gaussian distributions. 
+This can be fitted using the [expectation maximization](<https://en.wikipedia.org/wiki/Expectation-maximization_algorithm>) (EM) algorithm. 
+
+```{r,message=FALSE,warning=FALSE}
+library(mixtools)
+set.seed(123)
+#fit normal mixture to speed data
+mvmix <- grouped_by_id %>%
+  select(dist_km,av_speed_kmph) %>% 
+  mvnormalmixEM(.,k=2)
+plot(mvmix,which=2)
+```
+
+The EM algorithm in this case has identified clusters for runs and cycles well.
+Visually we may be able to see other patterns and clusters, including differences between short commuting cycles, long cycles, slower cycles and runs. 
+We could investigate this further by varying the nunber of clusters, $k$, in the EM algorithm. 
+
+Of course for this problem we do in fact have access to the class labels (run or ride) for the training and test data sets, and in our approach so far have not made use of these. 
+The EM algorithm is an unsupervised learning approach, whereas taking a supervised approach where we use these labels can give much better results. 
+
+## What do the routes actually look like?
+
+For this task, we make use of the brilliant strava package for R <https://github.com/marcusvolz/strava>  
+This allows us to process *.gpx* files and show routes with a facet plot.
+We restrict to recent activities here so that we can see what's going on.
+```{r, message=FALSE}
+devtools::load_all('strava/') #I have made slight changes to some of the plotting functions in a local version of the strava package
+processed_data %>%
+  filter(time > as.POSIXct('2017-10-01')) %>%
+  filter(time < as.POSIXct('2017-12-31')) %>%
+  plot_facets()
+```
+
+Lots of the shapes of these routes are similar. Why might this be?
+Well I repeat the same route each day for my commute. Fortunately I have manually tagged these as commutes when recording the data, so we can tell which these are.
+The commutes are shown blue with all other activities shown red.
+Perhaps we can gain more insight by removing these commutes from the dataset. 
+
+We can look at all (non commute) rides from 2017 and plot the routes with the alpha showing the distance of the ride.
+```{r}
+processed_data %>%
+  filter(!commute) %>%
+  filter(time > as.POSIXct('2017-01-01')) %>%
+  filter(time < as.POSIXct('2017-12-31')) %>%
+  filter(type=='Ride') %>%
+  plot_facets()
+
+```
+
+## Can we measure fitness levels over time?
+The best way to measure fitness levels is to do directly with an objective test such as a VO~2~ max test in a lab.
+Since this isn't possible with the data available to us, perhaps we can use a proxy for fitness levels such as the number of activities per week or time exercising per week, and consider this over time.
+
+```{r}
+library(tidyr)
+time_series_by_week <- processed_data %>%
+  filter(!commute) %>%
+  filter(time > as.POSIXct('2017-01-01')) %>%
+  filter(time < as.POSIXct('2017-12-31')) %>%
+  group_by(week=as.numeric(strftime(start_date,format='%V'))) %>%
+  summarise(num_activities = length(unique(id)), total_duration_hrs = sum(unique(elapsed_time))/60^2) %>% gather(variable,value,-week)
+g <- ggplot(time_series_by_week, aes(x=week,y=value,colour=variable)) +
+  geom_line() + 
+  theme_bw() + 
+  scale_y_continuous('value', c(0,2,4,6,8,10))
+print(g)
+
+```
+
+This suggests I did more training (distinct from commuting) in the second half of 2017, peaking roughly around September/October, which is in fact when I ran a half-marathon.
+With a slightly more complex model we could use these proxys to track a measure of fitness over time, similar to VO~2~ max estimates provided by popular sports apps. 
+
+Well that's all for now. Perhaps I can revist this in a year and compare to data from 2018, possibly including heart rate data too!
