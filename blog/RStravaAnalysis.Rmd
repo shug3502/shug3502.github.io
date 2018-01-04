@@ -7,7 +7,7 @@ output: html_document
 
 For over a year now, I have been recording my daily commute by bike, as well as other recreational cycles and runs, on a widely used app called [Strava](http://www.strava.com). 
 By accessing the Strava API, it is possible (and not all that hard, I used the steps described here: <http://www.open-thoughts.com/2017/01/the-quantified-cyclist-analysing-strava-data-using-r/>) to import data about these sessions to analyse in a program such as R.
-In addition, we can obtain the raw GPS data by downloading *.gpx* files directly from the Strava profile page, as described in this R package: <https://github.com/marcusvolz/strava/>
+In addition, we can obtain the raw GPS data by downloading *.gpx* files directly from the Strava profile page, as described in this R package: <https://github.com/marcusvolz/strava/> .
 In this post, I will explore some of these data. 
 
 ```{r, echo=FALSE, message=FALSE}
