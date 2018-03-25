@@ -1,0 +1,541 @@
+---
+title: "Fitting differential equation models with Stan"
+author: "Jonathan Harrison"
+date: "2018-03-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Differential equations offer a powerful way of describing dynamic processes. 
+They are widely used to describe non-linear behaviours in models of many areas including biology. 
+Parameterising these differential equation models allows us to relate them to reality via observed data. 
+Often there is uncertainty in our observed data that we want to account for when fitting our model and making preditions about behaviour in new conditions. 
+We will use Bayesian methods to incorporate this uncertainty.
+Modern probabilistic programming software such as [Stan](<http://mc-stan.org/>) allows us to make use of powerful statistical sampling methods such as [Hamiltonian Monte Carlo](<https://arxiv.org/abs/1701.02434>).
+We write a model description in Stan that we can then call from R, Python or other languages. 
+
+I found when starting to use Stan that it takes a bit more time to think about a problem to set it up in the right framework, but that the rewards for doing so are more than worthwhile in terms of efficiency of sampling and clarity of thinking about the problem.
+
+Here, I will look at a case study of fitting a simple ordinary differential equation model to data. Hopefully this will be helpful for anyone (like me!) who finds it helpful to learn from examples. For a more gentle introduction to Stan itself, I'd recommend <https://cran.r-project.org/web/packages/rstan/vignettes/rstan.html>
+
+## Key ingredients for a Bayesian model
+1. Process model
+2. Measurement model
+3. Parameter model
+
+### Process model
+This is our model for the underlying process that we are interested in.
+In general this could be a linear regression model.
+In our context here, it will be a different equation model.
+ 
+### Measurement model
+We assume that when we measure the state of the system, there is some error associated with that measurement.
+In a Bayesian context, we want a model of how that error is distributed.
+How big will the error be? 
+Will we be measuring count data, where counts appear at a certain rate?
+
+### Parameter model
+By taking a Bayesian approach, we assume that our parameters are random variables.
+We must specify our beliefs about these variables in the form of a prior distribution. This prior distribution is our parameter model.
+Using the model and our data, we are then able to update these beliefs and obtain samples from a posterior distribution. 
+
+We consider bacterial growth, which we will model with a logistic growth model, and parameterise this based on data from the [growthcurver](<https://cran.r-project.org/web/packages/growthcurver/index.html>) package. 
+This provides bacterial growth data from a 96 well plate over time.
+Here we convert the data to [long format](<http://r4ds.had.co.nz/tidy-data.html>) and plot to see the variability.
+```{r, message=FALSE}
+library(rstan)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(growthcurver) #contains the growthdata dataset
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+long_growthdata <- growthdata %>% gather(well,absorbance,-time)
+glimpse(long_growthdata)
+
+ggplot(long_growthdata,aes(time,absorbance,group=well)) +
+  geom_line() + 
+  theme_bw()
+
+```
+
+Plotting all the data together we can see that there is a lot of heterogeneity in the data, with the main growth phase taking place across a range of times and growing to different maximum levels.
+
+## Logistic growth model
+We will start by considering a logistic growth model for the bacterial growth:
+$$
+\frac{\text{d}y}{\text{d}t} = \theta_1 y \left( 1 - \frac{y}{\theta_2}\right).
+$$
+In the early phase, this assumes growth occurrs at an approximately constant rate, $\theta_1$, (equivalent to exponential growth), before later the growth rate is limited by the resources available via a carrying capactity, $\theta_2$. We assume all the measurements from different wells are governed by a single set of parameters, $\mathbf{\theta} = [\theta_1, \theta_2]$, and we attempt to infer these parameters.
+
+Now we want to define our process, measurement and parameter models in the appropriate code blocks in Stan. 
+
+```{stan, output.var="logisticgrowth_stan",warnings=FALSE}
+functions {
+  real[] logisticgrowth(real t,
+                  real[] y,
+                  real[] theta,
+                  real[] x_r,
+                  int[] x_i
+                  ) {
+    real dydt[x_i[1]];
+    for (i in 1:x_i[1]){
+      dydt[i] = theta[1] * y[i] * (1-y[i]/theta[2]);
+    }
+    return dydt;
+  }
+}
+data {
+  int<lower=1> T;
+  int<lower=1> n_wells;
+  real y0[n_wells];
+  real z[T,n_wells];
+  real t0;
+  real ts[T];
+}
+transformed data {
+  real x_r[0];
+  int x_i[1];
+  x_i[1] = n_wells;
+}
+parameters {
+  real<lower=0> theta[2];
+  real<lower=0> sigma;
+}
+model {
+  real y_hat[T,n_wells];
+  theta ~ cauchy(0,2.5);
+  sigma ~ normal(0,0.01);
+  y_hat = integrate_ode_rk45(logisticgrowth, y0, t0, ts, theta, x_r, x_i);
+  for (t in 1:T) {
+    for (i in 1:n_wells) {
+      z[t,i] ~ normal(y_hat[t,i], sigma);
+    }
+  }
+}
+generated quantities{
+  real y_pred[T,n_wells];
+  real z_pred[T,n_wells];
+  y_pred = integrate_ode_rk45(logisticgrowth, y0, t0, ts, theta, x_r, x_i );
+  for (t in 1:T) {
+    for(i in 1:n_wells){
+      z_pred[t,i] = y_pred[t,i] + normal_rng(0,sigma);
+    }
+  }
+}
+
+```
+
+We have specified a model here for the data from all 96 wells in the plate, assuming that the same parameters describe all of these data.
+The stan code above is compiled into a stan model object.
+This allows sampling under the hood to be performed via efficient C++ code.
+
+##Fitting the model via MCMC
+We fit the model by calling the following code from R.
+```{r}
+nSamples = nrow(growthdata) - 1 #use time=0 as initial condition, take this as fixed
+y0 = filter(growthdata,time==0) %>% select(-time) %>% unlist #initial condition
+t0 = 0.0
+ts = filter(growthdata,time>0) %>% select(time) %>% unlist
+z = filter(growthdata,time>0) %>% select(-time)
+n_wells = 9 #running on all wells can be slow
+estimates <- sampling(object = logisticgrowth_stan,
+                  data = list (
+                    T  = nSamples,
+                    n_wells = n_wells,
+                    y0 = y0[1:n_wells],
+                    z  = z[,1:n_wells],
+                    t0 = t0,
+                    ts = ts
+                  ),
+                  seed = 123,
+                  chains = 4,
+                  iter = 1000,
+                  warmup = 500
+)
+
+parametersToPlot = c("theta","sigma","lp__")
+print(estimates, pars = parametersToPlot)
+
+```
+## Visualising results
+Great, so we have managed to sample from the differential equation model.
+We have managed to quantify the distribution of our parameters.
+Let's have a look at the posterior distribution that we have obtained and perform some checks to make sure everything is working ok.
+
+```{r}
+library(bayesplot)
+draws <- as.array(estimates, pars=parametersToPlot)
+mcmc_trace(draws)
+# mcmc_intervals(draws,pars=c('theta[1]','theta[2]','sigma'))
+# color_scheme_set("purple")
+# mcmc_areas(draws,pars=c('theta[1]','theta[2]','sigma'))
+color_scheme_set("brightblue")
+mcmc_scatter(draws,pars=c('theta[1]','theta[2]'))
+
+
+```
+
+These results look great, we are able to identify some parameters for our model.
+Lets check the posterior predictive distribution to see if predictions made from this model actually look similar to our original data.
+
+```{r}
+xdata <- data.frame(absorbance = unlist(z[,1:n_wells]),well = as.vector(matrix(rep(1:n_wells,nSamples),nrow=nSamples,byrow=TRUE)),time = rep(ts,n_wells))
+pred <- as.data.frame(estimates, pars = "z_pred") %>%
+  gather(factor_key = TRUE) %>%
+  group_by(key) %>%
+  summarize(lb = quantile(value, probs = 0.05),
+            median = quantile(value, probs = 0.5),
+            ub = quantile(value, probs = 0.95)) %>%
+  bind_cols(xdata)
+
+p1 <- ggplot(pred, aes(x = time, y = absorbance))
+p1 <- p1 + geom_point() +
+  labs(x = "time (h)", y = "absorbance") +
+  theme(text = element_text(size = 12), axis.text = element_text(size = 12),
+        legend.position = "none", strip.text = element_text(size = 8))
+p1 + geom_line(aes(x = time, y = median)) +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = 0.25) +
+  facet_wrap(~factor(well))
+
+
+```
+
+Uh oh. Looks like something is not quite right here. The grey band gives a 95% posterior predictive interval from the model, while the observed data are shown as black circles (appearing like a thick black line here).
+
+1. The data exhibit a lag phase where not much growth happens, before then exhibiting fast growth and slowing when reaching the carrying capacity. 
+2. The model is not capturing the individual variability across each well in the plate. It tries to average over all the wells in some sense to find a single set of parameters to describe all the data. 
+
+## Adding a lag
+
+But first lets try adding a lag to the model. The logistic growth differential equation we just fitted is simple enough to solve analytically as $$y(t) =  \frac{A}{ (1 + B * \exp(-C * t))}$$  for some constants $A,B,C$, where ...
+We can add an extra parameter to this model to describe the lag phase, using the [Richards function](<http://pubs.rsc.org/-/content/articlehtml/2016/cp/c5cp07845h>): $$y(t) =  \frac{A}{ (1 + B * \exp(-C * (t-D)))^{1/B}}$$
+We attempt to fit this in the same way as before.
+
+
+```{stan, output.var="logisticgrowth_lagged_stan",warnings=FALSE}
+data {
+  int<lower=1> T;
+  int<lower=1> n_wells;
+  real y0[n_wells];
+  real z[T,n_wells];
+  real t0;
+  real ts[T];
+}
+transformed data {
+  real x_r[0];
+  int x_i[1];
+  x_i[1] = n_wells;
+}
+parameters {
+  real<lower=0> theta[4];
+  real<lower=0> sigma;
+}
+model {
+  real y_hat[T,n_wells];
+  theta ~ cauchy(0,2.5);
+  sigma ~ normal(0,0.01);
+  for (t in 1:T){
+  for (i in 1:n_wells){
+    y_hat[t,i] = theta[1] / (1 + (theta[2]) * exp(-theta[3] * (ts[t]-theta[4])))^(1/theta[2]);
+  }
+  }
+  for (t in 1:T) {
+    for (i in 1:n_wells) {
+      z[t,i] ~ normal(y_hat[t,i], sigma);
+    }
+  }
+}
+generated quantities{
+  real y_pred[T,n_wells];
+  real z_pred[T,n_wells];
+  for (t in 1:T){
+  for (i in 1:n_wells){
+  y_pred[t,i] = theta[1] / (1 + (theta[2]) * exp(-theta[3] * (ts[t]-theta[4])))^(1/theta[2]);
+  }
+}
+  for (t in 1:T) {
+    for(i in 1:n_wells){
+      z_pred[t,i] = y_pred[t,i] + normal_rng(0,sigma);
+    }
+  }
+}
+
+```
+
+
+```{r, echo=FALSE, message=FALSE}
+estimates <- sampling(object = logisticgrowth_lagged_stan,
+                  data = list (
+                    T  = nSamples,
+                    n_wells = n_wells,
+                    y0 = y0[1:n_wells],
+                    z  = z[,1:n_wells],
+                    t0 = t0,
+                    ts = ts
+                  ),
+                  seed = 123,
+                  chains = 4,
+                  iter = 1000,
+                  warmup = 500
+)
+
+parametersToPlot = c("theta","sigma","lp__")
+print(estimates, pars = parametersToPlot)
+
+```
+
+```{r, echo=FALSE}
+xdata <- data.frame(absorbance = unlist(z[,1:n_wells]),well = as.vector(matrix(rep(1:n_wells,nSamples),nrow=nSamples,byrow=TRUE)),time = rep(ts,n_wells))
+pred <- as.data.frame(estimates, pars = "z_pred") %>%
+  gather(factor_key = TRUE) %>%
+  group_by(key) %>%
+  summarize(lb = quantile(value, probs = 0.05),
+            median = quantile(value, probs = 0.5),
+            ub = quantile(value, probs = 0.95)) %>%
+  bind_cols(xdata)
+
+p1 <- ggplot(pred, aes(x = time, y = absorbance))
+p1 <- p1 + geom_point() +
+  labs(x = "time (h)", y = "absorbance") +
+  theme(text = element_text(size = 12), axis.text = element_text(size = 12),
+        legend.position = "none", strip.text = element_text(size = 8))
+p1 + geom_line(aes(x = time, y = median)) +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = 0.25) +
+  facet_wrap(~factor(well))
+
+```
+
+The extra parameter here seems to give us a better fit to the shape of the growth curve capturing the lag better.
+However, the heterogeneity in the data is not captured by the model.
+Lets try a hierarchical version of this same model.
+
+##Hierarchical models
+In a hierarchical model we assume that the processes generating the data in each well are the same but the parameter values may be different.
+These are drawn from a common distribution of parameters.
+This offers a powerful way to describe the heterogeneity amongst a population. We can fit the model as before, although it is more challenging since there are many more parameters to estimate.  
+
+```{stan, output.var="logisticgrowth_lagged_hierarchical_stan",warnings=FALSE}
+data {
+  int<lower=1> T;
+  int<lower=1> n_wells;
+  real y0[n_wells];
+  real z[T,n_wells];
+  real t0;
+  real ts[T];
+}
+parameters {
+  real<lower=0> mu_th[4];
+  real<lower=0> tau[4];
+  real<lower=0> mu_sig;
+  real<lower=0> xi;
+  real<lower=0> theta[n_wells,4];
+  real<lower=0> sigma[n_wells];
+}
+model {
+  real y_hat[T,n_wells];
+  mu_th ~ cauchy(0,2.5);
+  mu_sig ~ normal(0,0.01); 
+  tau ~ cauchy(0,2.5);
+  xi ~ cauchy(0,2.5);
+  for (i in 1:n_wells){
+    theta[i,1:4] ~ normal(mu_th,tau);
+    sigma[i] ~ normal(mu_sig,xi);
+  }
+  for (t in 1:T){
+  for (i in 1:n_wells){
+      y_hat[t,i] = theta[i,1] / (1 + (theta[i,2]) * exp(-theta[i,3] * (ts[t]-theta[i,4])))^(1/theta[i,2]);
+  }
+  }
+  for (t in 1:T) {
+    for (i in 1:n_wells) {
+      z[t,i] ~ normal(y_hat[t,i], sigma[i]);
+    }
+  }
+}
+generated quantities{
+  real y_pred[T,n_wells];
+  real z_pred[T,n_wells];
+  for (t in 1:T){
+  for (i in 1:n_wells){
+        y_pred[t,i] = theta[i,1] / (1 + (theta[i,2]) * exp(-theta[i,3] * (ts[t]-theta[i,4])))^(1/theta[i,2]);
+  }
+}
+  for (t in 1:T) {
+    for(i in 1:n_wells){
+      z_pred[t,i] = y_pred[t,i] + normal_rng(0,sigma[i]);
+    }
+  }
+}
+
+```
+
+```{r, echo=FALSE}
+estimates <- sampling(object = logisticgrowth_lagged_hierarchical_stan,
+                  data = list (
+                    T  = nSamples,
+                    n_wells = n_wells,
+                    y0 = y0[1:n_wells],
+                    z  = z[,1:n_wells],
+                    t0 = t0,
+                    ts = ts
+                  ),
+                  seed = 123,
+                  chains = 4,
+                  iter = 1000,
+                  warmup = 500, 
+                  control = list(adapt_delta=0.99)
+)
+
+parametersToPlot = c("theta","sigma","lp__")
+print(estimates, pars = parametersToPlot)
+```
+
+
+
+<!-- ```{stan, output.var="logisticgrowth_hierarchical_stan",warnings=FALSE} -->
+<!-- functions { -->
+<!--   real[] logisticgrowth(real t, -->
+<!--                   real[] y, -->
+<!--                   real[] theta, -->
+<!--                   real[] x_r, -->
+<!--                   int[] x_i -->
+<!--                   ) { -->
+<!--     real dydt[x_i[1]]; -->
+<!--     for (i in 1:x_i[1]){ -->
+<!--  //     dydt[i] = theta[1] * y[i] * (1-y[i]/theta[2]); -->
+<!--       dydt[i] = theta[2*(i-1)+1] * y[i]^2 * (1-y[i]/theta[2*(i-1)+2]); -->
+<!--     } -->
+<!--     return dydt; -->
+<!--   } -->
+<!-- } -->
+<!-- data { -->
+<!--   int<lower=1> T; -->
+<!--   int<lower=1> n_wells; -->
+<!--   real y0[n_wells]; -->
+<!--   real z[T,n_wells]; -->
+<!--   real t0; -->
+<!--   real ts[T]; -->
+<!-- } -->
+<!-- transformed data { -->
+<!--   real x_r[0]; -->
+<!--   int x_i[1]; -->
+<!--   x_i[1] = n_wells; -->
+<!-- } -->
+<!-- /* -->
+<!-- parameters { -->
+<!--   real<lower=0> theta[2]; -->
+<!--   real<lower=0> sigma; -->
+<!-- } -->
+<!-- */ -->
+<!-- parameters { -->
+<!--   real<lower=0> mu_th[2]; -->
+<!--   real<lower=0> tau[2]; -->
+<!--   real<lower=0> mu_sig; -->
+<!--   real<lower=0> xi; -->
+<!--   real<lower=0> theta[n_wells,2]; -->
+<!--   real<lower=0> sigma[n_wells]; -->
+<!-- } -->
+<!-- transformed parameters { -->
+<!--   real<lower=0> th_vec[2*n_wells]; -->
+<!--   for (i in 1:n_wells){ -->
+<!--     th_vec[2*(i-1)+1] = theta[i,1]; -->
+<!--     th_vec[2*(i-1)+2] = theta[i,2];     -->
+<!--   } -->
+<!-- } -->
+<!-- model { -->
+<!--   real y_hat[T,n_wells]; -->
+<!--   mu_th ~ cauchy(0,2.5); -->
+<!--   mu_sig ~ normal(0,0.01); //cauchy(0,2.5); -->
+<!--   tau ~ cauchy(0,2.5); -->
+<!--   xi ~ cauchy(0,2.5); -->
+<!--   for (i in 1:n_wells){ -->
+<!--     theta[i,1:2] ~ normal(mu_th,tau); -->
+<!--     sigma[i] ~ normal(mu_sig,xi); -->
+<!--   } -->
+<!--   y_hat = integrate_ode_rk45(logisticgrowth, y0, t0, ts, th_vec, x_r, x_i); -->
+<!--   for (t in 1:T) { -->
+<!--     for (i in 1:n_wells) { -->
+<!--       z[t,i] ~ normal(y_hat[t,i], sigma[i]); -->
+<!--     } -->
+<!--   } -->
+<!-- } -->
+<!-- generated quantities{ -->
+<!--   real y_pred[T,n_wells]; -->
+<!--   real z_pred[T,n_wells]; -->
+<!--   y_pred = integrate_ode_rk45(logisticgrowth, y0, t0, ts, th_vec, x_r, x_i ); -->
+<!--   for (t in 1:T) { -->
+<!--     for(i in 1:n_wells){ -->
+<!--       z_pred[t,i] = y_pred[t,i] + normal_rng(0,sigma[i]); -->
+<!--     } -->
+<!--   } -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- And to fit the hierarchical model: -->
+
+<!-- ```{r} -->
+<!-- nSamples = nrow(growthdata) - 1 #use time=0 as initial condition, take this as fixed -->
+<!-- y0 = filter(growthdata,time==0) %>% select(-time) %>% unlist #initial condition -->
+<!-- t0 = 0.0 -->
+<!-- ts = filter(growthdata,time>0) %>% select(time) %>% unlist -->
+<!-- z = filter(growthdata,time>0) %>% select(-time) -->
+<!-- n_wells = 6 #running on all wells can be slow -->
+<!-- estimates <- sampling(object = logisticgrowth_hierarchical_stan, -->
+<!--                   data = list ( -->
+<!--                     T  = nSamples, -->
+<!--                     n_wells = n_wells, -->
+<!--                     y0 = y0[1:n_wells], -->
+<!--                     z  = z[,1:n_wells], -->
+<!--                     t0 = t0, -->
+<!--                     ts = ts -->
+<!--                   ), -->
+<!--                   seed = 123, -->
+<!--                   chains = 4, -->
+<!--                   iter = 1000, -->
+<!--                   warmup = 500, -->
+<!--                   control = list(adapt_delta = 0.8) -->
+<!-- ) -->
+
+<!-- #e <- rstan::extract(estimates,pars=c("theta[1]","sigma[1]","lp__"),permuted=TRUE) -->
+<!-- #hist(e$`theta[1]`) -->
+<!-- parametersToPlot = c("theta","sigma","lp__") -->
+<!-- print(estimates, pars = parametersToPlot) -->
+<!-- library(beepr) -->
+<!-- beepr::beep(3) -->
+<!-- ``` -->
+
+Lets check the posterior predictive distribution to see if predictions made from this model look similar to our original data.
+
+```{r, echo=FALSE}
+xdata <- data.frame(absorbance = unlist(z[,1:n_wells]),well = as.vector(matrix(rep(1:n_wells,nSamples),nrow=nSamples,byrow=TRUE)),time = rep(ts,n_wells))
+pred <- as.data.frame(estimates, pars = "z_pred") %>%
+  gather(factor_key = TRUE) %>%
+  group_by(key) %>%
+  summarize(lb = quantile(value, probs = 0.05),
+            median = quantile(value, probs = 0.5),
+            ub = quantile(value, probs = 0.95)) %>%
+  bind_cols(xdata) %>% filter(well<12)
+
+p1 <- ggplot(pred, aes(x = time, y = absorbance))
+p1 <- p1 + geom_point() +
+  labs(x = "time (h)", y = "absorbance") +
+  theme(text = element_text(size = 12), axis.text = element_text(size = 12),
+        legend.position = "none", strip.text = element_text(size = 8))
+p1 + geom_line(aes(x = time, y = median)) +
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = 0.25) +
+  facet_wrap(~factor(well))
+
+```
+
+We have learnt a separate set of parameters for each well giving a better description of the data from each well and capturing the variability in the population. We could now make predictions about behaviour in a new experiment and quantitatively compare different populations of bacteria.  
+
+Notice that we received a message about divergent transitions after warmup: *11 divergent transitions after warmup.* 
+This indicates problems sampling from the posterior distribution.
+As a result we should be cautious in our interpretation of these results and avoid using full posterior distributions as the tails in particular may be badly sampled.
+Reparametrising our model may help by altering the geometry of the posterior distribution.
+If you have suggestions of good ways to do so for this case, then get in touch!
