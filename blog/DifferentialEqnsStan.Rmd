@@ -171,12 +171,8 @@ Let's have a look at the posterior distribution that we have obtained and perfor
 library(bayesplot)
 draws <- as.array(estimates, pars=parametersToPlot)
 mcmc_trace(draws)
-# mcmc_intervals(draws,pars=c('theta[1]','theta[2]','sigma'))
-# color_scheme_set("purple")
-# mcmc_areas(draws,pars=c('theta[1]','theta[2]','sigma'))
 color_scheme_set("brightblue")
 mcmc_scatter(draws,pars=c('theta[1]','theta[2]'))
-
 
 ```
 
