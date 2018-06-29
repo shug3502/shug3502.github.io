@@ -14,7 +14,7 @@ In [recently published work](http://journals.plos.org/ploscompbiol/article?id=10
 
 If you are imaging motile bacteria, and want to learn about how the bacteria move without destroying your data via photobleaching or phototoxicity, then is it better to image frequently but obtain noisier data, or less frequently but obtain more precise data?
 
-![](../images/StrikingImage.tif){width=500px} 
+![](../images/StrikingImage.png){width=500px} 
 
 We also investigate what happends if your model is misspecified, and apply our inference framework to RNA transport data.  If you're interested in the details, then do read the [full article](http://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1006235) which is the first published work from my PhD!
 
