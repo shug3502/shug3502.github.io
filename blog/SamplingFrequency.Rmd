@@ -1,0 +1,18 @@
+---
+title: "Ever wondered how experimental design affects what you can learn from an experiment?"
+author: "Jonathan Harrison"
+date: "29 June 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+In [recently published work](http://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1006235) together with my amazing supervisor [Ruth Baker](http://www.iamruthbaker.com/), I have looked at the effect of experimental design on what we can learn by [Bayesian inference](https://en.wikipedia.org/wiki/Bayesian_inference) about a general class of stochastic models for biological transport known as [velocity jump process models](https://link.springer.com/article/10.1007/BF00277392). These models have been used to describe transport on a range of scales, from subcellular, to cellular to ecological scales. We formulate parameter estimation for these models using a hidden states framework, and examine the effect of changing how you observe the transport process.
+
+If you are imaging motile bacteria, and want to learn about how the bacteria move without destroying your data via photobleaching or phototoxicity, then is it better to image frequently but obtain noisier data, or less frequently but obtain more precise data?
+
+We also investigate what happends if your model is misspecified, and apply our inference framework to RNA transport data.  If you're interested in the details, then do read the [full article](http://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1006235) which is the first published work from my PhD!
+
