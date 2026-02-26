@@ -1,0 +1,16 @@
+title: Jonathan Harrison
+description: Senior AI Research Scientist — ML for Drug Discovery
+url: "https://shug3502.github.io"
+baseurl: ""
+
+markdown: kramdown
+sass:
+  sass_dir: _sass
+  style: compressed
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - README.txt
+  - LICENSE.txt
+  - vendor

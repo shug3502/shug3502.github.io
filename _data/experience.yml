@@ -1,0 +1,29 @@
+- title: Senior AI Research Scientist
+  company: Recursion
+  period: "2024 — Present"
+  highlights:
+    - Training and fine-tuning foundation models for molecular property prediction
+    - "Analysis cited in Recursion 10-K: \">2.5x increased efficiency in detecting new bioactive scaffolds with >40% reduction in flagging of likely cytotoxic compounds\""
+    - Uncertainty quantification for ML models with applications in Bayesian Optimization and Active Learning
+
+- title: AI Research Scientist
+  company: Exscientia
+  period: "2022 — 2024"
+  highlights:
+    - Led product team for molecular property prediction
+    - Core contributor to Molflux, an open-source ML ecosystem for chemistry
+    - ML models and active learning software used day-to-day by dozens of drug designers
+
+- title: Postdoctoral Research Fellow
+  company: University of Warwick
+  period: "2019 — 2022"
+  highlights:
+    - Modelled chromosome dynamics using Bayesian statistics and stochastic differential equations
+    - Developed computational tools providing insight into how and why cell division goes wrong
+    - Supervised MSc rotation projects for 2 PhD students
+
+- title: Data Science Intern
+  company: Hudl
+  period: "2018"
+  highlights:
+    - Event detection in football matches using deep learning

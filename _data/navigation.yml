@@ -1,0 +1,12 @@
+- label: About
+  href: "#about"
+- label: Experience
+  href: "#experience"
+- label: Projects
+  href: "#projects"
+- label: Skills
+  href: "#skills"
+- label: Publications
+  href: "#publications"
+- label: Contact
+  href: "#contact"

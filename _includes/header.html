@@ -1,0 +1,15 @@
+<nav class="nav" id="nav">
+  <div class="nav__inner container">
+    <a href="#" class="nav__logo">JH</a>
+    <div class="nav__links" id="nav-links">
+      {% for item in site.data.navigation %}
+      <a href="{{ item.href }}" class="nav__link">{{ item.label }}</a>
+      {% endfor %}
+    </div>
+    <button class="nav__hamburger" id="nav-toggle" aria-label="Toggle menu">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+  </div>
+</nav>

@@ -1,0 +1,48 @@
+- hash: "d4e5f6a"
+  title: "New machine learning models for predicting the organic cation transporters OCT1, OCT2, and OCT3 uptake"
+  authors: "G. Bocci, N. Mathai, B. Suutari, J. Harrison, S. Speichert, M. Gooyit, D.E.V. Pires, J.P. Overington"
+  venue: "ACS Omega"
+  year: 2025
+  doi: "https://doi.org/10.1021/acsomega.5c05179"
+
+- hash: "c9d0e1f"
+  title: "Evidence for a HURP/EB free mixed-nucleotide zone in kinetochore-microtubules"
+  authors: "C. Castrogiovanni*, A. Inchingolo*, J.U. Harrison, D. Dudka, O. Sen, N.J. Burroughs, A.D. McAinsh, P. Meraldi"
+  venue: "Nature Communications"
+  year: 2022
+  doi: "https://www.nature.com/articles/s41467-022-32421-x"
+
+- hash: "a1b2c3d"
+  title: "Kinetochore life histories reveal the origins of chromosome mis-segregation and correction mechanisms"
+  authors: "O. Sen*, J.U. Harrison*, N.J. Burroughs, A.D. McAinsh"
+  venue: "Developmental Cell"
+  year: 2021
+  doi: "https://doi.org/10.1016/j.devcel.2021.10.007"
+
+- hash: "b7c8d9e"
+  title: "An automatic adaptive method to combine summary statistics in approximate Bayesian computation"
+  authors: "J.U. Harrison, R.E. Baker"
+  venue: "PLOS One"
+  year: 2020
+  doi: "https://doi.org/10.1371/journal.pone.0236954"
+
+- hash: "f0a1b2c"
+  title: "Testing models of mRNA localization reveals robustness regulated by reducing transport between cells"
+  authors: "J.U. Harrison, R.M. Parton, I. Davis, R.E. Baker"
+  venue: "Biophysical Journal"
+  year: 2019
+  doi: "https://doi.org/10.1016/j.bpj.2019.10.025"
+
+- hash: "e3d4c5b"
+  title: "The impact of temporal sampling resolution on parameter inference for biological transport models"
+  authors: "J.U. Harrison, R.E. Baker"
+  venue: "PLOS Computational Biology"
+  year: 2018
+  doi: "https://doi.org/10.1371/journal.pcbi.1006235"
+
+- hash: "a6b7c8d"
+  title: "A hybrid algorithm for coupling PDE and compartment-based dynamics"
+  authors: "J.U. Harrison, C.A. Yates"
+  venue: "Journal of the Royal Society Interface"
+  year: 2016
+  doi: "https://doi.org/10.1098/rsif.2016.0335"

@@ -1,0 +1,46 @@
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: $nav-height + 16px;
+}
+
+body {
+  font-family: $font-body;
+  background-color: $bg-primary;
+  color: $text-primary;
+  line-height: 1.7;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: $accent-blue;
+  text-decoration: none;
+  transition: color 0.2s;
+
+  &:hover {
+    color: #79b8ff;
+  }
+}
+
+h1, h2, h3, h4 {
+  font-family: $font-mono;
+  font-weight: 600;
+}
+
+code {
+  font-family: $font-mono;
+  font-size: 0.9em;
+}
+
+::selection {
+  background: rgba($accent-green, 0.3);
+  color: $text-primary;
+}

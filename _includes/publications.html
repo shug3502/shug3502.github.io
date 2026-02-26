@@ -1,0 +1,23 @@
+<section id="publications">
+  <div class="container">
+    <h2 class="section-heading">git log --oneline</h2>
+    <ul class="pub-list">
+      {% for pub in site.data.publications %}
+      <li class="pub-item">
+        <span class="pub-item__hash">{{ pub.hash }}</span>
+        <div class="pub-item__content">
+          <div class="pub-item__title">
+            <a href="{{ pub.doi }}">{{ pub.title }}</a>
+          </div>
+          <div class="pub-item__meta">
+            {{ pub.authors }} — <span class="pub-item__venue">{{ pub.venue }}</span> ({{ pub.year }})
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="pub-scholar">
+      <a href="https://scholar.google.co.uk/citations?user=VE2bz_UAAAAJ">→ Full list on Google Scholar</a>
+    </p>
+  </div>
+</section>
